@@ -27,40 +27,7 @@
   </form>
 
   <script>
-  var PREFIX = "cloud_";
-function snapshotObj() {
-  var o = {};
-  for (var i = 0; i < localStorage.length; i++) {
-    var k = localStorage.key(i);
-    if (k.indexOf(PREFIX) !== 0) o[k] = localStorage.getItem(k);
-  }
-  return o;
-}
-function snapStr(o) {
-  return JSON.stringify(Object.keys(o).sort().map(function (k) { return [k, o[k]]; }));
-}
-function markSynced(data, updatedAt) {
-  localStorage.setItem("cloud_last", snapStr(data));
-  localStorage.setItem("cloud_updated", String(updatedAt));
-}
-function applyCloud(cloud, local) {
-  try {
-    if (Object.keys(local).length) localStorage.setItem("cloud_backup", JSON.stringify(local));
-  } catch (e) {}
-  Object.keys(local).forEach(function (k) { localStorage.removeItem(k); });
-  Object.keys(cloud.data).forEach(function (k) { localStorage.setItem(k, cloud.data[k]); });
-  markSynced(cloud.data, cloud.updatedAt);
-}
-async function upload(token, data) {
-  var res = await fetch("/api/save", {
-    method: "PUT",
-    headers: { Authorization: "Bearer " + token, "content-type": "application/json" },
-    body: JSON.stringify({ data: data }),
-  });
-  if (res.ok) markSynced(data, (await res.json()).updatedAt);
-}
-
-var msg = document.getElementById("msg");
+ var msg = document.getElementById("msg");
 
 async function go(kind) {
   msg.textContent = "";
@@ -74,28 +41,9 @@ async function go(kind) {
   });
   var body = await res.json();
   if (!res.ok) { msg.textContent = body.error || "Something went wrong"; return; }
-
-  var token = body.token;
-  var local = snapshotObj();
-  var hasLocal = Object.keys(local).length > 0;
-  var cloud = await (await fetch("/api/save", {
-    headers: { Authorization: "Bearer " + token },
-  })).json();
-
-  if (cloud.data && hasLocal && snapStr(cloud.data) !== snapStr(local)) {
-    var useCloud = confirm(
-      "A cloud save exists for this account and it's different from this computer's save.\n\n" +
-      "OK = load the CLOUD save (replaces this computer's save)\n" +
-      "Cancel = KEEP THIS COMPUTER'S save and overwrite the cloud"
-    );
-    if (useCloud) applyCloud(cloud, local);
-    else await upload(token, local);
-  } else if (cloud.data) {
-    applyCloud(cloud, local);
-  } else if (hasLocal) {
-    await upload(token, local);
-  }
-  localStorage.setItem("cloud_token", token);
+  localStorage.removeItem("cloud_last");
+  localStorage.removeItem("cloud_updated");
+  localStorage.setItem("cloud_token", body.token);
   location.replace("/");
 }
 
