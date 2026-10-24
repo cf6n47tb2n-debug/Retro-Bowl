@@ -15,6 +15,11 @@
     </style>
   </head>
   <body>
-    <iframe src="/rb/index.html" style="position: fixed; inset: 0px; outline: none; border: none; height: 100%; width: 100%; overflow: hidden;"></iframe>
+    <iframe id="game" style="position: fixed; inset: 0px; outline: none; border: none; height: 100%; width: 100%; overflow: hidden;"></iframe>
+    <script>
+      window.cloudReady.then(function () {
+        document.getElementById("game").src = "/rb/index.html";
+      });
+    </script>
   </body>
 </html>
