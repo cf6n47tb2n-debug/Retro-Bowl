@@ -27,74 +27,80 @@
   </form>
 
   <script>
-    var PREFIX = "cloud_";
-    function snapshotObj() {
-      var o = {};
-      for (var i = 0; i < localStorage.length; i++) {
-        var k = localStorage.key(i);
-        if (k.indexOf(PREFIX) !== 0) o[k] = localStorage.getItem(k);
-      }
-      return o;
-    }
-    function snapStr(o) {
-      return JSON.stringify(Object.keys(o).sort().map(function (k) { return [k, o[k]]; }));
-    }
-    var msg = document.getElementById("msg");
+  var PREFIX = "cloud_";
+function snapshotObj() {
+  var o = {};
+  for (var i = 0; i < localStorage.length; i++) {
+    var k = localStorage.key(i);
+    if (k.indexOf(PREFIX) !== 0) o[k] = localStorage.getItem(k);
+  }
+  return o;
+}
+function snapStr(o) {
+  return JSON.stringify(Object.keys(o).sort().map(function (k) { return [k, o[k]]; }));
+}
+function markSynced(data, updatedAt) {
+  localStorage.setItem("cloud_last", snapStr(data));
+  localStorage.setItem("cloud_updated", String(updatedAt));
+}
+function applyCloud(cloud, local) {
+  try {
+    if (Object.keys(local).length) localStorage.setItem("cloud_backup", JSON.stringify(local));
+  } catch (e) {}
+  Object.keys(local).forEach(function (k) { localStorage.removeItem(k); });
+  Object.keys(cloud.data).forEach(function (k) { localStorage.setItem(k, cloud.data[k]); });
+  markSynced(cloud.data, cloud.updatedAt);
+}
+async function upload(token, data) {
+  var res = await fetch("/api/save", {
+    method: "PUT",
+    headers: { Authorization: "Bearer " + token, "content-type": "application/json" },
+    body: JSON.stringify({ data: data }),
+  });
+  if (res.ok) markSynced(data, (await res.json()).updatedAt);
+}
 
-    async function go(kind) {
-      msg.textContent = "";
-      var res = await fetch("/api/" + kind, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          username: document.getElementById("u").value,
-          password: document.getElementById("p").value,
-        }),
-      });
-      var body = await res.json();
-      if (!res.ok) { msg.textContent = body.error || "Something went wrong"; return; }
+var msg = document.getElementById("msg");
 
-      var token = body.token;
-      var local = snapshotObj();
-      var hasLocal = Object.keys(local).length > 0;
-      var cloud = await (await fetch("/api/save", {
-        headers: { Authorization: "Bearer " + token },
-      })).json();
+async function go(kind) {
+  msg.textContent = "";
+  var res = await fetch("/api/" + kind, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      username: document.getElementById("u").value,
+      password: document.getElementById("p").value,
+    }),
+  });
+  var body = await res.json();
+  if (!res.ok) { msg.textContent = body.error || "Something went wrong"; return; }
 
-      if (cloud.data && hasLocal && snapStr(cloud.data) !== snapStr(local)) {
-        var useCloud = confirm(
-          "A cloud save exists for this account and it's different from this computer's save.\n\n" +
-          "OK = use the CLOUD save (this computer's save is replaced)\n" +
-          "Cancel = keep THIS computer's save and upload it to the cloud"
-        );
-        if (useCloud) applyCloud(cloud.data);
-        else await upload(token, local);
-      } else if (cloud.data) {
-        applyCloud(cloud.data);
-      } else if (hasLocal) {
-        await upload(token, local);
-      }
-      localStorage.setItem("cloud_token", token);
-      if (!localStorage.getItem("cloud_last")) localStorage.setItem("cloud_last", snapStr(snapshotObj()));
-      location.replace("/");
-    }
+  var token = body.token;
+  var local = snapshotObj();
+  var hasLocal = Object.keys(local).length > 0;
+  var cloud = await (await fetch("/api/save", {
+    headers: { Authorization: "Bearer " + token },
+  })).json();
 
-    function applyCloud(data) {
-      Object.keys(snapshotObj()).forEach(function (k) { localStorage.removeItem(k); });
-      Object.keys(data).forEach(function (k) { localStorage.setItem(k, data[k]); });
-      localStorage.setItem("cloud_last", snapStr(data));
-    }
-    async function upload(token, data) {
-      await fetch("/api/save", {
-        method: "PUT",
-        headers: { Authorization: "Bearer " + token, "content-type": "application/json" },
-        body: JSON.stringify({ data: data }),
-      });
-      localStorage.setItem("cloud_last", snapStr(data));
-    }
+  if (cloud.data && hasLocal && snapStr(cloud.data) !== snapStr(local)) {
+    var useCloud = confirm(
+      "A cloud save exists for this account and it's different from this computer's save.\n\n" +
+      "OK = load the CLOUD save (replaces this computer's save)\n" +
+      "Cancel = KEEP THIS COMPUTER'S save and overwrite the cloud"
+    );
+    if (useCloud) applyCloud(cloud, local);
+    else await upload(token, local);
+  } else if (cloud.data) {
+    applyCloud(cloud, local);
+  } else if (hasLocal) {
+    await upload(token, local);
+  }
+  localStorage.setItem("cloud_token", token);
+  location.replace("/");
+}
 
-    document.getElementById("f").addEventListener("submit", function (e) { e.preventDefault(); go("login"); });
-    document.getElementById("register").addEventListener("click", function () { go("register"); });
+document.getElementById("f").addEventListener("submit", function (e) { e.preventDefault(); go("login"); });
+document.getElementById("register").addEventListener("click", function () { go("register"); });
   </script>
 </body>
 </html>
