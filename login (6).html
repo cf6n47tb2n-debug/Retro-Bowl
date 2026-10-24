@@ -1,0 +1,100 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Retro Bowl - Log in</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #14213d; color: #fff;
+           display: flex; min-height: 100vh; align-items: center; justify-content: center; margin: 0; }
+    form { background: #1f2f55; padding: 28px; border-radius: 12px; width: 300px; }
+    h1 { margin: 0 0 16px; font-size: 22px; }
+    input, button { width: 100%; box-sizing: border-box; padding: 10px; margin-bottom: 10px;
+                    border-radius: 6px; border: 0; font-size: 16px; }
+    button { background: #fca311; font-weight: 700; cursor: pointer; }
+    button.alt { background: #3a4d7a; color: #fff; }
+    #msg { color: #ff8b8b; min-height: 20px; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <form id="f">
+    <h1>Retro Bowl</h1>
+    <input id="u" placeholder="Username" autocomplete="username" required>
+    <input id="p" type="password" placeholder="Password" autocomplete="current-password" required>
+    <button type="submit" id="login">Log in</button>
+    <button type="button" id="register" class="alt">Create account</button>
+    <div id="msg"></div>
+  </form>
+
+  <script>
+    var PREFIX = "cloud_";
+    function snapshotObj() {
+      var o = {};
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        if (k.indexOf(PREFIX) !== 0) o[k] = localStorage.getItem(k);
+      }
+      return o;
+    }
+    function snapStr(o) {
+      return JSON.stringify(Object.keys(o).sort().map(function (k) { return [k, o[k]]; }));
+    }
+    var msg = document.getElementById("msg");
+
+    async function go(kind) {
+      msg.textContent = "";
+      var res = await fetch("/api/" + kind, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          username: document.getElementById("u").value,
+          password: document.getElementById("p").value,
+        }),
+      });
+      var body = await res.json();
+      if (!res.ok) { msg.textContent = body.error || "Something went wrong"; return; }
+
+      var token = body.token;
+      var local = snapshotObj();
+      var hasLocal = Object.keys(local).length > 0;
+      var cloud = await (await fetch("/api/save", {
+        headers: { Authorization: "Bearer " + token },
+      })).json();
+
+      if (cloud.data && hasLocal && snapStr(cloud.data) !== snapStr(local)) {
+        var useCloud = confirm(
+          "A cloud save exists for this account and it's different from this computer's save.\n\n" +
+          "OK = use the CLOUD save (this computer's save is replaced)\n" +
+          "Cancel = keep THIS computer's save and upload it to the cloud"
+        );
+        if (useCloud) applyCloud(cloud.data);
+        else await upload(token, local);
+      } else if (cloud.data) {
+        applyCloud(cloud.data);
+      } else if (hasLocal) {
+        await upload(token, local);
+      }
+      localStorage.setItem("cloud_token", token);
+      if (!localStorage.getItem("cloud_last")) localStorage.setItem("cloud_last", snapStr(snapshotObj()));
+      location.replace("/");
+    }
+
+    function applyCloud(data) {
+      Object.keys(snapshotObj()).forEach(function (k) { localStorage.removeItem(k); });
+      Object.keys(data).forEach(function (k) { localStorage.setItem(k, data[k]); });
+      localStorage.setItem("cloud_last", snapStr(data));
+    }
+    async function upload(token, data) {
+      await fetch("/api/save", {
+        method: "PUT",
+        headers: { Authorization: "Bearer " + token, "content-type": "application/json" },
+        body: JSON.stringify({ data: data }),
+      });
+      localStorage.setItem("cloud_last", snapStr(data));
+    }
+
+    document.getElementById("f").addEventListener("submit", function (e) { e.preventDefault(); go("login"); });
+    document.getElementById("register").addEventListener("click", function () { go("register"); });
+  </script>
+</body>
+</html>
