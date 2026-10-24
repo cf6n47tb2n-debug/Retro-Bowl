@@ -84,21 +84,47 @@ async function handleApi(req: Request, path: string): Promise<Response> {
   if (path === "/api/save") {
     const username = await authedUser(req);
     if (!username) return json({ error: "Not logged in" }, 401);
-    const key = ["saves", username];
+    const metaKey = ["save", username];
 
     if (req.method === "GET") {
-      const res = await kv.get<{ data: Record<string, string>; updatedAt: number }>(key);
-      return json(res.value ?? { data: null, updatedAt: 0 });
+      const meta = await kv.get<{ id: string; count: number; updatedAt: number }>(metaKey);
+      if (!meta.value) return json({ data: null, updatedAt: 0 });
+      const { id, count, updatedAt } = meta.value;
+      let text = "";
+      for (let i = 0; i < count; i += 10) {
+        const keys: Deno.KvKey[] = [];
+        for (let j = i; j < Math.min(i + 10, count); j++) {
+          keys.push(["savechunk", username, id, j]);
+        }
+        const parts = await kv.getMany<string[]>(keys);
+        for (const p of parts) text += p.value ?? "";
+      }
+      return json({ data: JSON.parse(text), updatedAt });
     }
+
     if (req.method === "PUT") {
-      const text = await req.text();
-      if (text.length > 2_000_000) return json({ error: "Save too large" }, 413);
-      const body = JSON.parse(text);
+      const body = await req.json().catch(() => null);
       if (typeof body?.data !== "object" || body.data === null) {
         return json({ error: "Bad save" }, 400);
       }
+      // keep it ASCII-only so splitting into chunks can't corrupt characters
+      const text = JSON.stringify(body.data).replace(
+        /[\u007f-\uffff]/g,
+        (c) => "\\u" + c.charCodeAt(0).toString(16).padStart(4, "0"),
+      );
+      if (text.length > 3_000_000) return json({ error: "Save too large" }, 413);
+
+      const id = crypto.randomUUID();
+      const size = 20_000;
+      const count = Math.max(1, Math.ceil(text.length / size));
+      for (let i = 0; i < count; i++) {
+        await kv.set(["savechunk", username, id, i], text.slice(i * size, (i + 1) * size));
+      }
       const updatedAt = Date.now();
-      await kv.set(key, { data: body.data, updatedAt });
+      await kv.set(metaKey, { id, count, updatedAt });
+      for await (const e of kv.list({ prefix: ["savechunk", username] })) {
+        if (e.key[2] !== id) await kv.delete(e.key);
+      }
       return json({ updatedAt });
     }
     return json({ error: "Method not allowed" }, 405);
