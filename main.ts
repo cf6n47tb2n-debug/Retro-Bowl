@@ -133,8 +133,35 @@ async function handleApi(req: Request, path: string): Promise<Response> {
   return json({ error: "Not found" }, 404);
 }
 
-Deno.serve((request) => {
+let patchedGame: string | null = null;
+async function getPatchedGame() {
+  if (!patchedGame) {
+    const src = await Deno.readTextFile(
+      new URL("./rb/html5game/RetroBowl.js", import.meta.url),
+    );
+    const patched = src.replace(
+      "_SL._VL = _Jm(_dm, _em, 100035)._qA;",
+      "_SL._VL = true;",
+    );
+    if (patched === src) console.warn("Team patch did not apply");
+    patchedGame = patched;
+  }
+  return patchedGame;
+}
+
+Deno.serve(async (request) => {
   const path = new URL(request.url).pathname;
+  if (path.startsWith("/api/")) return handleApi(request, path);
+  if (path === "/rb/html5game/RetroBowl.js") {
+    return new Response(await getPatchedGame(), {
+      headers: {
+        "content-type": "text/javascript; charset=utf-8",
+        "cache-control": "no-cache",
+      },
+    });
+  }
+  return serveDir(request, { fsRoot: "." });
+});  const path = new URL(request.url).pathname;
   if (path.startsWith("/api/")) return handleApi(request, path);
   return serveDir(request, { fsRoot: "." });
 });
