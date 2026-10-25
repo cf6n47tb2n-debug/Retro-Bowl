@@ -161,7 +161,4 @@ Deno.serve(async (request) => {
     });
   }
   return serveDir(request, { fsRoot: "." });
-});  const path = new URL(request.url).pathname;
-  if (path.startsWith("/api/")) return handleApi(request, path);
-  return serveDir(request, { fsRoot: "." });
-});
+});  
